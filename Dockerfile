@@ -7,8 +7,9 @@ WORKDIR /home
 # 复制源码
 COPY . .
 
-# 安装cloud189-sdk依赖
-RUN cd vender/cloud189-sdk && \
+# 安装cloud189-sdk依赖（要求构建上下文已包含submodule内容）
+RUN test -f vender/cloud189-sdk/package.json && \
+    cd vender/cloud189-sdk && \
     yarn install && \
     yarn build
 

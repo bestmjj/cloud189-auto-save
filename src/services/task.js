@@ -144,24 +144,73 @@ class TaskService {
                 }
                 const subFolderContent = await cloud189.listShareDir(shareInfo.shareId, folder.id, shareInfo.shareMode, taskDto.accessCode);
                 const hasFiles = subFolderContent?.fileListAO?.fileList?.length > 0;
-                if (!hasFiles) {
+                const hasSubFolders = subFolderContent?.fileListAO?.folderList?.length > 0;
+                if (!hasFiles && !hasSubFolders) {
                     logTaskEvent(`子文件夹 "${folder.name}" (ID: ${folder.id}) 为空，跳过目录。`);
                     continue; // 跳到下一个子文件夹
                 }
                 let realFolder;
                 // 检查目标文件夹是否存在
-                await this.checkFolderExists(cloud189, rootFolder.id, folder.fileName, taskDto.overwriteFolder);
+                await this.checkFolderExists(cloud189, rootFolder.id, folder.name, taskDto.overwriteFolder);
                 realFolder = await cloud189.createFolder(folder.name, rootFolder.id);
                 if (!realFolder?.id) throw new Error('创建目录失败');
                 rootFolder?.oldFolder && (taskDto.realRootFolderId = realFolder.id);
                 realFolder.name = path.join(rootFolder.name, realFolder.name);
+                // 只有当该层有文件时才创建任务
+                if (hasFiles) {
+                    const subTask = this.taskRepo.create(
+                        this._createTaskConfig(
+                            taskDto,
+                            shareInfo, realFolder, shareInfo.fileName, 0, folder.id, folder.name
+                        )
+                    );
+                    tasks.push(await this.taskRepo.save(subTask));
+                }
+                // 如果启用了递归且该子文件夹还有子目录，递归处理
+                if (taskDto.recursiveSelectedFolders && hasSubFolders) {
+                    await this._handleSubFolderRecursive(
+                        cloud189, shareInfo, taskDto, realFolder, folder.id, folder.name, tasks
+                    );
+                }
+            }
+        }
+    }
+
+    // 递归处理子文件夹（创建云盘目录 + 创建任务）
+    async _handleSubFolderRecursive(cloud189, shareInfo, taskDto, parentCloudFolder, shareParentFolderId, shareParentFolderName, tasks) {
+        const result = await cloud189.listShareDir(shareInfo.shareId, shareParentFolderId, shareInfo.shareMode, taskDto.accessCode);
+        if (!result?.fileListAO) return;
+        const { fileList: files = [], folderList: subFolders = [] } = result.fileListAO;
+        for (const folder of subFolders) {
+            const subFolderContent = await cloud189.listShareDir(shareInfo.shareId, folder.id, shareInfo.shareMode, taskDto.accessCode);
+            const hasFiles = subFolderContent?.fileListAO?.fileList?.length > 0;
+            const hasSubFolders = subFolderContent?.fileListAO?.folderList?.length > 0;
+            if (!hasFiles && !hasSubFolders) {
+                logTaskEvent(`子文件夹 "${folder.name}" (ID: ${folder.id}) 为空，跳过目录。`);
+                continue;
+            }
+            // 在云盘中创建对应目录
+            await this.checkFolderExists(cloud189, parentCloudFolder.id, folder.name, taskDto.overwriteFolder);
+            const cloudFolder = await cloud189.createFolder(folder.name, parentCloudFolder.id);
+            if (!cloudFolder?.id) throw new Error('创建目录失败');
+            // 构建该层的完整路径名（用于 shareFolderName 和 realFolderName）
+            const fullShareFolderName = path.join(shareParentFolderName, folder.name);
+            cloudFolder.name = path.join(parentCloudFolder.name, folder.name);
+            // 只有当该层有文件时才创建任务
+            if (hasFiles) {
                 const subTask = this.taskRepo.create(
                     this._createTaskConfig(
                         taskDto,
-                        shareInfo, realFolder, shareInfo.fileName, 0, folder.id, folder.name
+                        shareInfo, cloudFolder, shareInfo.fileName, 0, folder.id, fullShareFolderName
                     )
                 );
                 tasks.push(await this.taskRepo.save(subTask));
+            }
+            // 继续递归更深的层级
+            if (hasSubFolders) {
+                await this._handleSubFolderRecursive(
+                    cloud189, shareInfo, taskDto, cloudFolder, folder.id, fullShareFolderName, tasks
+                );
             }
         }
     }
@@ -1238,8 +1287,20 @@ class TaskService {
         })
     }
 
-    // 根据分享链接获取文件目录组合 资源名 资源名/子目录1 资源名/子目录2
-    async parseShareFolderByShareLink(shareLink, accountId, accessCode) {
+    // 递归获取分享目录下的所有子目录（携带完整相对路径）
+    async _collectAllShareSubFolders(cloud189, shareInfo, parentFolderId, accessCode, result = [], pathPrefix = '') {
+        const dir = await cloud189.listShareDir(shareInfo.shareId, parentFolderId, shareInfo.shareMode, accessCode);
+        const subFolders = dir?.fileListAO?.folderList || [];
+        for (const folder of subFolders) {
+            const fullPath = pathPrefix ? path.join(pathPrefix, folder.name) : folder.name;
+            result.push({ id: folder.id, name: fullPath });
+            await this._collectAllShareSubFolders(cloud189, shareInfo, folder.id, accessCode, result, fullPath);
+        }
+        return result;
+    }
+
+    // 解析分享链接的目录列表
+    async parseShareFolderByShareLink(accountId, shareLink, accessCode, recursive = false) {
         const account = await this._getAccountById(accountId)
         if (!account) {
             throw new Error('账号不存在')
@@ -1267,13 +1328,21 @@ class TaskService {
         if (!shareInfo.isFolder) {
             return folders;
         }
-        // 遍历分享链接的目录
-        const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, accessCode);
-        if (!result?.fileListAO) return folders;
-        const { folderList: subFolders = [] } = result.fileListAO;
-        subFolders.forEach(folder => {
-            folders.push({id: folder.id, name: path.join(shareInfo.fileName, folder.name)});
-        });
+        if (recursive) {
+            // 递归获取所有子目录（folder.name 已含完整相对路径）
+            const allSubFolders = await this._collectAllShareSubFolders(cloud189, shareInfo, shareInfo.fileId, accessCode);
+            allSubFolders.forEach(folder => {
+                folders.push({id: folder.id, name: path.join(shareInfo.fileName, folder.name)});
+            });
+        } else {
+            // 遍历分享链接的目录（只取第一层）
+            const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, accessCode);
+            if (!result?.fileListAO) return folders;
+            const { folderList: subFolders = [] } = result.fileListAO;
+            subFolders.forEach(folder => {
+                folders.push({id: folder.id, name: path.join(shareInfo.fileName, folder.name)});
+            });
+        }
         return folders;
     }
 

@@ -15,6 +15,7 @@ class CreateTaskDto {
         this.realRootFolderId = data.realRootFolderId;
         this.targetFolder = data.targetFolder;
         this.selectedFolders = data?.selectedFolders; // 选中的分享目录
+        this.recursiveSelectedFolders = data?.recursiveSelectedFolders; // 是否递归选择子目录
         this.tgbot = data?.tgbot;
         this.sourceRegex = data?.sourceRegex; // 源正则 (自动重命名)
         this.targetRegex = data?.targetRegex; // 目标正则 (自动重命名)

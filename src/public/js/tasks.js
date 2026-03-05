@@ -203,6 +203,10 @@ function initTaskForm() {
         const targetRegex = document.getElementById('ctTargetRegex').value;
         const taskName = document.getElementById('taskName').value.trim();
         const enableTaskScraper = document.getElementById('enableTaskScraper').checked;
+        if (!targetFolderId) {
+            message.warning('请选择保存目录');
+            return;
+        }
         if (!taskName) {
             message.warning('任务名称不能为空');
             return;
@@ -228,7 +232,7 @@ function initTaskForm() {
             message.warning('至少选择一个分享目录');
             return;
         }
-        const body = { accountId, shareLink, totalEpisodes, targetFolderId, accessCode, matchPattern, matchOperator, matchValue, overwriteFolder: 0, remark, enableCron, cronExpression, targetFolder, selectedFolders, sourceRegex, targetRegex, taskName, enableTaskScraper };
+        const body = { accountId, shareLink, totalEpisodes, targetFolderId, accessCode, matchPattern, matchOperator, matchValue, overwriteFolder: 0, remark, enableCron, cronExpression, targetFolder, selectedFolders, sourceRegex, targetRegex, taskName, enableTaskScraper, recursiveSelectedFolders: document.getElementById('recursiveSelectFolders')?.checked || false };
         await createTask(e,body)
             
     });
@@ -895,12 +899,13 @@ async function parseShareLink() {
     }
     const shareFoldersGroup = document.querySelector('.share-folders-group');
     const shareFoldersList = document.getElementById('shareFoldersList');
+    const recursive = document.getElementById('recursiveSelectFolders')?.checked || false;
     try {
         loading.show()
         const response = await fetch('/api/share/parse', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ shareLink:parseShareLink, accessCode, accountId })
+            body: JSON.stringify({ shareLink:parseShareLink, accessCode, accountId, recursive })
         });
         loading.hide()
         const data = await response.json();
@@ -939,6 +944,15 @@ async function parseShareLink() {
 document.getElementById('selectAllFolders').addEventListener('change', function(e) {
     const checkboxes = document.querySelectorAll('input[name="chooseShareFolder"]');
     checkboxes.forEach(cb => cb.checked = e.target.checked);
+});
+
+// 递归选择子目录切换时重新解析分享链接
+document.getElementById('recursiveSelectFolders').addEventListener('change', function() {
+    const shareLink = document.getElementById('shareLink')?.value?.trim();
+    const accountId = document.getElementById('accountId')?.value;
+    if (shareLink && accountId) {
+        parseShareLink();
+    }
 });
 
 

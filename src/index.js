@@ -614,7 +614,8 @@ AppDataSource.initialize().then(async () => {
             const shareLink = req.body.shareLink;
             const accountId = req.body.accountId;
             const accessCode = req.body.accessCode;
-            const shareFolders = await taskService.parseShareFolderByShareLink(shareLink, accountId, accessCode);
+            const recursive = req.body.recursive || false;
+            const shareFolders = await taskService.parseShareFolderByShareLink(accountId, shareLink, accessCode, recursive);
             res.json({success: true, data: shareFolders})
         }catch (error) {
             res.status(500).json({ success: false, error: error.message });
