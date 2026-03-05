@@ -27,7 +27,6 @@ function showEditTaskModal(id) {
     document.getElementById('editCurrentEpisodes').value = task.currentEpisodes;
     document.getElementById('editTotalEpisodes').value = task.totalEpisodes;
     document.getElementById('editStatus').value = task.status;
-    document.getElementById('shareLink').value = task.shareLink;
     document.getElementById('shareFolder').value = task.shareFolderName;
     document.getElementById('shareFolderId').value = task.shareFolderId;
     document.getElementById('editMatchPattern').value = task.matchPattern;
@@ -38,6 +37,10 @@ function showEditTaskModal(id) {
     document.getElementById('editEnableCron').checked = task.enableCron;
     document.getElementById('editCronExpression').value = task.cronExpression;
     document.getElementById('editAccountId').value = task.accountId;
+    // 清空分享链接字段（仅在需要更换时填写）
+    document.getElementById('editShareLink').value = '';
+    document.getElementById('editAccessCode').value = '';
+    document.getElementById('editShareParseError').textContent = '';
 
     document.getElementsByClassName('cronExpression-box')[1].style.display = task.enableCron?'block':'none';
     document.getElementById('editEnableCron').addEventListener('change', function() {
@@ -95,8 +98,31 @@ function initEditTaskForm() {
         const cronExpression = document.getElementById('editCronExpression').value;
         const enableTaskScraper = document.getElementById('editEnableTaskScraper').checked;
 
+        const editShareLink = document.getElementById('editShareLink').value.trim();
+        const editAccessCode = document.getElementById('editAccessCode').value.trim();
+
         try {
             loading.show()
+
+            // 如果填写了新的分享链接，先更新分享链接
+            if (editShareLink) {
+                const shareLinkResponse = await fetch(`/api/tasks/${id}/sharelink`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        shareLink: editShareLink,
+                        accessCode: editAccessCode || undefined
+                    })
+                });
+                const shareLinkResult = await shareLinkResponse.json();
+                if (!shareLinkResult.success) {
+                    loading.hide();
+                    document.getElementById('editShareParseError').textContent = shareLinkResult.error || '更新分享链接失败';
+                    return;
+                }
+                document.getElementById('editShareParseError').textContent = '';
+            }
+
             const response = await fetch(`/api/tasks/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -127,6 +153,7 @@ function initEditTaskForm() {
                 message.warning(error.message || '修改任务失败');
             }
         } catch (error) {
+            loading.hide();
             message.warning('修改任务失败：' + error.message);
         }
     });

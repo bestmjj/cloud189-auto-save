@@ -373,6 +373,21 @@ AppDataSource.initialize().then(async () => {
         }
     });
 
+    // 更新任务分享链接
+    app.put('/api/tasks/:id/sharelink', async (req, res) => {
+        try {
+            const taskId = parseInt(req.params.id);
+            const { shareLink, accessCode } = req.body;
+            if (!shareLink) {
+                return res.json({ success: false, error: '分享链接不能为空' });
+            }
+            const updatedTask = await taskService.updateTaskShareLink(taskId, shareLink, accessCode);
+            res.json({ success: true, data: updatedTask });
+        } catch (error) {
+            res.json({ success: false, error: error.message });
+        }
+    });
+
     app.post('/api/tasks/:id/execute', async (req, res) => {
         try {
             const task = await taskRepo.findOne({

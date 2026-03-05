@@ -740,6 +740,57 @@ class TaskService {
         return newTask;
     }
 
+    // 更新任务分享链接
+    async updateTaskShareLink(taskId, shareLink, accessCode) {
+        const task = await this.taskRepo.findOneBy({ id: taskId });
+        if (!task) throw new Error('任务不存在');
+
+        const account = await this.accountRepo.findOneBy({ id: task.accountId });
+        if (!account) throw new Error('账号不存在');
+
+        const cloud189 = Cloud189Service.getInstance(account);
+
+        // 解析分享链接（自动提取访问码）
+        const { url: parsedUrl, accessCode: parsedCode } = cloud189Utils.parseCloudShare(shareLink);
+        const finalAccessCode = parsedCode || accessCode || task.accessCode;
+
+        const shareCode = cloud189Utils.parseShareCode(parsedUrl);
+        const shareInfo = await this.getShareInfo(cloud189, shareCode);
+
+        if (shareInfo.shareMode == 1) {
+            if (!finalAccessCode) {
+                throw new Error('分享链接为加密链接, 请提供访问码');
+            }
+            const accessCodeResponse = await cloud189.checkAccessCode(shareCode, finalAccessCode);
+            if (!accessCodeResponse) {
+                throw new Error('校验访问码失败');
+            }
+            if (!accessCodeResponse.shareId) {
+                throw new Error('访问码无效');
+            }
+            shareInfo.shareId = accessCodeResponse.shareId;
+        }
+
+        if (!shareInfo.shareId) {
+            throw new Error('获取分享信息失败');
+        }
+
+        task.shareLink = parsedUrl;
+        task.shareId = shareInfo.shareId;
+        task.shareMode = shareInfo.shareMode;
+        task.shareFileId = shareInfo.fileId;
+        if (finalAccessCode) {
+            task.accessCode = finalAccessCode;
+        }
+        // 重置任务状态为待处理，以便重新执行
+        task.status = 'pending';
+        task.retryCount = 0;
+        task.nextRetryTime = null;
+        task.lastError = null;
+
+        return await this.taskRepo.save(task);
+    }
+
     // 自动重命名
     async autoRename(cloud189, task) {
         if ((!task.sourceRegex || !task.targetRegex) && !AIService.isEnabled()) return [];
@@ -1348,7 +1399,11 @@ class TaskService {
 
     // 校验目录是否在目录列表中
     checkFolderInList(taskDto, folderId) {
-        return (!taskDto.selectedFolders || taskDto.selectedFolders.length === 0) || taskDto.tgbot || (taskDto.selectedFolders?.includes(folderId) || false);
+        if (!taskDto.selectedFolders || taskDto.selectedFolders.length === 0) return true;
+        if (taskDto.tgbot) return true;
+        // 统一转换为字符串比较，避免前端传字符串、API返回数字导致的类型不匹配
+        const folderIdStr = String(folderId);
+        return taskDto.selectedFolders.some(id => String(id) === folderIdStr);
     }
 
     // 校验云盘中是否存在同名目录
