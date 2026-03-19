@@ -56,6 +56,7 @@ class TaskService {
             totalEpisodes: taskDto.totalEpisodes,
             resourceName,
             currentEpisodes,
+            startEpisode: taskDto.startEpisode || 0,
             shareFileId: shareInfo.fileId,
             shareFolderId: shareFolderId || shareInfo.fileId,
             shareFolderName,
@@ -548,45 +549,52 @@ class TaskService {
                 return ''
              }
              if (!shareDir?.fileListAO?.fileList) {
-                logTaskEvent("获取文件列表失败: " + JSON.stringify(shareDir));
-                throw new Error('获取文件列表失败');
-            }
-            let shareFiles = [...shareDir.fileListAO.fileList];            
-            const folderFiles = await this.getAllFolderFiles(cloud189, task);
-            const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
-            // mediaSuffixs转为小写
-            const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase())
-            const { existingFiles, existingFileNames, existingMediaCount } = folderFiles.reduce((acc, file) => {
-                if (!file.isFolder) {
-                    acc.existingFiles.add(file.md5);
-                    acc.existingFileNames.add(file.name);
-                    if ((task.totalEpisodes == null || task.totalEpisodes <= 0) || this._checkFileSuffix(file, true, mediaSuffixs)) {
-                        acc.existingMediaCount++;
-                    }
-                }
-                return acc;
-            }, { 
-                existingFiles: new Set(), 
-                existingFileNames: new Set(), 
-                existingMediaCount: 0 
-            });
-            let aiFiltered = false;
-            if (AIService.isEnabled() && task.matchPattern && task.matchOperator && task.matchValue) {
-                const aiResult = await this._filterFilesWithAI(task, shareFiles)
-                if (aiResult != null) {
-                    shareFiles = aiResult;
-                    aiFiltered = true;
-                }
-            }
-            
-            const newFiles = shareFiles
-                .filter(file => 
-                    !file.isFolder && !existingFiles.has(file.md5) 
-                   && !existingFileNames.has(file.name)
-                   && this._checkFileSuffix(file, enableOnlySaveMedia, mediaSuffixs)
-                   && (aiFiltered || this._handleMatchMode(task, file))
-                   && !this.isHarmonized(file)
-                );
+                 logTaskEvent("获取文件列表失败: " + JSON.stringify(shareDir));
+                 throw new Error('获取文件列表失败');
+             }
+             let shareFiles = [...shareDir.fileListAO.fileList];
+             const folderFiles = await this.getAllFolderFiles(cloud189, task);
+             const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
+             // mediaSuffixs转为小写
+             const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase())
+             const { existingFiles, existingFileNames, existingMediaCount } = folderFiles.reduce((acc, file) => {
+                 if (!file.isFolder) {
+                     acc.existingFiles.add(file.md5);
+                     acc.existingFileNames.add(file.name);
+                     if ((task.totalEpisodes == null || task.totalEpisodes <= 0) || this._checkFileSuffix(file, true, mediaSuffixs)) {
+                         acc.existingMediaCount++;
+                     }
+                 }
+                 return acc;
+             }, {
+                 existingFiles: new Set(),
+                 existingFileNames: new Set(),
+                 existingMediaCount: 0
+             });
+             let aiFiltered = false;
+             if (AIService.isEnabled() && task.matchPattern && task.matchOperator && task.matchValue) {
+                 const aiResult = await this._filterFilesWithAI(task, shareFiles)
+                 if (aiResult != null) {
+                     shareFiles = aiResult;
+                     aiFiltered = true;
+                 }
+             }
+             const startEpisode = parseInt(task.startEpisode || 0);
+             if (startEpisode > 0) {
+                 shareFiles = shareFiles.filter(file => {
+                     if (!file || file.isFolder) return false;
+                     return this._shouldDownloadFromStartEpisode(task, file, startEpisode);
+                 });
+             }
+             
+             const newFiles = shareFiles
+                 .filter(file =>
+                     !file.isFolder && !existingFiles.has(file.md5)
+                    && !existingFileNames.has(file.name)
+                    && this._checkFileSuffix(file, enableOnlySaveMedia, mediaSuffixs)
+                    && (aiFiltered || this._handleMatchMode(task, file))
+                    && !this.isHarmonized(file)
+                 );
 
             // 处理新文件并保存到数据库和云盘
             if (newFiles.length > 0) {
@@ -702,7 +710,7 @@ class TaskService {
             new StrmService().deleteDir(path.join(task.account.localStrmPrefix, folderName))
         }
         // 只允许更新特定字段
-        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper'];
+        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper', 'startEpisode'];
         for (const field of allowedFields) {
             if (updates[field] !== undefined) {
                 task[field] = updates[field];
@@ -714,6 +722,9 @@ class TaskService {
         }
         if (task.totalEpisodes === null) {
             task.totalEpisodes = 0;
+        }
+        if (task.startEpisode === null) {
+            task.startEpisode = 0;
         }
         
         // 验证状态值
@@ -728,6 +739,9 @@ class TaskService {
         }
         if (task.totalEpisodes !== null && task.totalEpisodes < 0) {
             throw new Error('总数不能为负数');
+        }
+        if (task.startEpisode !== null && task.startEpisode < 0) {
+            throw new Error('起始集数不能为负数');
         }
         if (task.matchPattern && !task.matchValue) {
             throw new Error('匹配模式需要提供匹配值');
@@ -1075,11 +1089,42 @@ class TaskService {
     }
 
     // 根据matchOperator判断值是否要转换为数字
-    _handleMatchValue(matchOperator, matchResult, matchValue) {    
+    _handleMatchValue(matchOperator, matchResult, matchValue) {
         if (matchOperator === 'lt' || matchOperator === 'gt') {
             return [parseFloat(matchResult), parseFloat(matchValue)];
         }
         return [matchResult, matchValue];
+    }
+
+    // 根据起始集数过滤文件
+    _shouldDownloadFromStartEpisode(task, file, startEpisode) {
+        if (!file?.name) return false;
+        const fileName = file.name;
+        if (task.matchPattern) {
+            try {
+                const regex = new RegExp(task.matchPattern);
+                const match = fileName.match(regex);
+                if (match) {
+                    const matchResult = match[0];
+                    const episodeNum = parseFloat(matchResult);
+                    if (!Number.isNaN(episodeNum)) {
+                        return episodeNum >= startEpisode;
+                    }
+                }
+            } catch (error) {
+                logTaskEvent(`起始集数匹配失败: ${error.message}`);
+            }
+        }
+        const fallbackRegex = /(?:(?:S\d{1,2})?E(\d{1,3})|第\s*(\d{1,3})\s*[集话]|EP\s*(\d{1,3})|\b(\d{1,3})\b)/i;
+        const fallbackMatch = fileName.match(fallbackRegex);
+        if (fallbackMatch) {
+            const raw = fallbackMatch.slice(1).find(Boolean);
+            const episodeNum = parseFloat(raw);
+            if (!Number.isNaN(episodeNum)) {
+                return episodeNum >= startEpisode;
+            }
+        }
+        return true;
     }
 
     // 任务失败处理逻辑

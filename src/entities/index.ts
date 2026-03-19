@@ -99,6 +99,9 @@ export class Task {
     @Column('integer', { default: 0 })
     currentEpisodes!: number;
 
+    @Column('integer', { default: 0 })
+    startEpisode!: number;
+
     @Column('text', { nullable: true })
     realFolderId!: string;
 

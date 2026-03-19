@@ -26,6 +26,7 @@ function showEditTaskModal(id) {
     document.getElementById('editRealFolderId').value = task.realFolderId;
     document.getElementById('editCurrentEpisodes').value = task.currentEpisodes;
     document.getElementById('editTotalEpisodes').value = task.totalEpisodes;
+    document.getElementById('editStartEpisode').value = task.startEpisode ?? 0;
     document.getElementById('editStatus').value = task.status;
     document.getElementById('shareFolder').value = task.shareFolderName;
     document.getElementById('shareFolderId').value = task.shareFolderId;
@@ -37,9 +38,9 @@ function showEditTaskModal(id) {
     document.getElementById('editEnableCron').checked = task.enableCron;
     document.getElementById('editCronExpression').value = task.cronExpression;
     document.getElementById('editAccountId').value = task.accountId;
-    // 清空分享链接字段（仅在需要更换时填写）
-    document.getElementById('editShareLink').value = '';
-    document.getElementById('editAccessCode').value = '';
+    // 显示当前分享链接与访问码（如有），方便更换订阅时直接修改
+    document.getElementById('editShareLink').value = task.shareLink || '';
+    document.getElementById('editAccessCode').value = task.accessCode || '';
     document.getElementById('editShareParseError').textContent = '';
 
     document.getElementsByClassName('cronExpression-box')[1].style.display = task.enableCron?'block':'none';
@@ -85,6 +86,7 @@ function initEditTaskForm() {
         const realFolderName = document.getElementById('editRealFolder').value;
         const currentEpisodes = document.getElementById('editCurrentEpisodes').value;
         const totalEpisodes = document.getElementById('editTotalEpisodes').value;
+        const startEpisode = document.getElementById('editStartEpisode')?.value;
         const shareFolderName = document.getElementById('shareFolder').value;
         const shareFolderId = document.getElementById('shareFolderId').value;
         const status = document.getElementById('editStatus').value;
@@ -131,6 +133,7 @@ function initEditTaskForm() {
                     realFolderId,
                     currentEpisodes: currentEpisodes?parseInt(currentEpisodes):0,
                     totalEpisodes: totalEpisodes?parseInt(totalEpisodes):0,
+                    startEpisode: startEpisode?parseInt(startEpisode):0,
                     status,
                     shareFolderName,
                     shareFolderId,

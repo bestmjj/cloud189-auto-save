@@ -190,6 +190,7 @@ function initTaskForm() {
         const accountId = document.getElementById('accountId').value;
         const shareLink = document.getElementById('shareLink').value;
         const totalEpisodes = document.getElementById('totalEpisodes').value;
+        const startEpisode = document.getElementById('startEpisode')?.value;
         const targetFolderId = document.getElementById('targetFolderId').value;
         const targetFolder = document.getElementById('targetFolder').value
         const accessCode = document.getElementById('accessCode').value;
@@ -232,7 +233,7 @@ function initTaskForm() {
             message.warning('至少选择一个分享目录');
             return;
         }
-        const body = { accountId, shareLink, totalEpisodes, targetFolderId, accessCode, matchPattern, matchOperator, matchValue, overwriteFolder: 0, remark, enableCron, cronExpression, targetFolder, selectedFolders, sourceRegex, targetRegex, taskName, enableTaskScraper, recursiveSelectedFolders: document.getElementById('recursiveSelectFolders')?.checked || false };
+        const body = { accountId, shareLink, totalEpisodes, startEpisode, targetFolderId, accessCode, matchPattern, matchOperator, matchValue, overwriteFolder: 0, remark, enableCron, cronExpression, targetFolder, selectedFolders, sourceRegex, targetRegex, taskName, enableTaskScraper, recursiveSelectedFolders: document.getElementById('recursiveSelectFolders')?.checked || false };
         await createTask(e,body)
             
     });

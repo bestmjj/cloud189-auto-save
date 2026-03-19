@@ -23,6 +23,7 @@ class CreateTaskDto {
         this.enableTaskScraper = data?.enableTaskScraper; // 启用刮削
         this.enableSystemProxy = data?.enableSystemProxy; // 启用系统代理
         this.isFolder = data?.isFolder; // 是否是文件夹
+        this.startEpisode = data?.startEpisode; // 起始集数（更换订阅时从该集开始）
     }
 
     validate() {
@@ -32,6 +33,9 @@ class CreateTaskDto {
         if (this.matchPattern && !this.matchValue) throw new Error('填了匹配模式, 那么匹配值就必须填');
         if (this.matchOperator && !['lt', 'eq', 'gt', 'contains', 'notContains'].includes(this.matchOperator)) {
             throw new Error('无效的匹配操作符');
+        }
+        if (this.startEpisode !== undefined && this.startEpisode !== null && this.startEpisode !== '' && Number(this.startEpisode) < 0) {
+            throw new Error('起始集数不能为负数');
         }
         // if (!this.tgbot && (!this.selectedFolders || this.selectedFolders.length === 0)) {
         //     throw new Error('分享目录最少选择一个');
