@@ -746,6 +746,16 @@
                     <input type="text" id="editRemark">
                 </div>
                 <div class="form-group">
+                    <label>文件名重命（可选）<span class="help-icon" data-tooltip="常用正则表达式示例">?</span></label>
+                    <div class="match-rule" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        <input type="text" id="editSourceRegex" placeholder="正则表达式 例如: .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$" style="flex: 2 1 200px;">
+                        <input id="editTargetRegex" placeholder="例如: 沙尘暴.$1$2" style="flex: 1 1 100px;">
+                    </div>
+                    <small class="form-text">例如：沙尘暴 - S01E06 - 第6集.mkv 正则就填写 .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$ 值填写沙尘暴.$1$2, 结果为值填写沙尘暴.S01E06.mkv<br/>
+                        注意: 如果开启了AI并且正则未填写, 则会使用AI处理文件名; 正则的优先级 > AI
+                    </small>
+                </div>
+                <div class="form-group">
                     <label>文件名匹配规则（可选）<span class="help-icon" data-tooltip="常用正则表达式示例">?</span></label>
                     <div class="match-rule" style="display: flex; flex-wrap: wrap; gap: 10px;">
                         <input type="text" id="editMatchPattern" placeholder="正则表达式 例如: 第(\d+)集" style="flex: 2 1 200px;">

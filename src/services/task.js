@@ -710,7 +710,7 @@ class TaskService {
             new StrmService().deleteDir(path.join(task.account.localStrmPrefix, folderName))
         }
         // 只允许更新特定字段
-        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper', 'startEpisode'];
+        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'enableTaskScraper', 'startEpisode', 'sourceRegex', 'targetRegex'];
         for (const field of allowedFields) {
             if (updates[field] !== undefined) {
                 task[field] = updates[field];
@@ -1059,7 +1059,7 @@ class TaskService {
     _handleMatchMode(task, file) {
         if (!task.matchPattern || !task.matchValue) {
             return true;
-        } 
+        }
         const matchPattern = task.matchPattern;
         const matchOperator = task.matchOperator; // lt eq gt
         const matchValue = task.matchValue;
@@ -1067,7 +1067,7 @@ class TaskService {
         // 根据正则表达式提取文件名中匹配上的值 然后根据matchOperator判断是否匹配
         const match = file.name.match(regex);
         if (match) {
-            const matchResult = match[0];
+            const matchResult = this._extractMatchResult(match);
             const values = this._handleMatchValue(matchOperator, matchResult, matchValue);
             if (matchOperator === 'lt' && values[0] < values[1]) {
                 return true;
@@ -1088,6 +1088,14 @@ class TaskService {
         return false;
     }
 
+    _extractMatchResult(match) {
+        if (!Array.isArray(match) || match.length === 0) {
+            return '';
+        }
+        const captureGroup = match.slice(1).find(value => value !== undefined && value !== null && value !== '');
+        return captureGroup ?? match[0];
+    }
+
     // 根据matchOperator判断值是否要转换为数字
     _handleMatchValue(matchOperator, matchResult, matchValue) {
         if (matchOperator === 'lt' || matchOperator === 'gt') {
@@ -1105,7 +1113,7 @@ class TaskService {
                 const regex = new RegExp(task.matchPattern);
                 const match = fileName.match(regex);
                 if (match) {
-                    const matchResult = match[0];
+                    const matchResult = this._extractMatchResult(match);
                     const episodeNum = parseFloat(matchResult);
                     if (!Number.isNaN(episodeNum)) {
                         return episodeNum >= startEpisode;

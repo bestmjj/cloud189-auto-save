@@ -30,6 +30,8 @@ function showEditTaskModal(id) {
     document.getElementById('editStatus').value = task.status;
     document.getElementById('shareFolder').value = task.shareFolderName;
     document.getElementById('shareFolderId').value = task.shareFolderId;
+    document.getElementById('editSourceRegex').value = task.sourceRegex || '';
+    document.getElementById('editTargetRegex').value = task.targetRegex || '';
     document.getElementById('editMatchPattern').value = task.matchPattern;
     document.getElementById('editMatchOperator').value = task.matchOperator;
     document.getElementById('editMatchValue').value = task.matchValue;
@@ -95,6 +97,8 @@ function initEditTaskForm() {
         const matchOperator = document.getElementById('editMatchOperator').value
         const matchValue = document.getElementById('editMatchValue').value
         const remark = document.getElementById('editRemark').value
+        const sourceRegex = document.getElementById('editSourceRegex').value
+        const targetRegex = document.getElementById('editTargetRegex').value
 
         const enableCron = document.getElementById('editEnableCron').checked;
         const cronExpression = document.getElementById('editCronExpression').value;
@@ -144,7 +148,9 @@ function initEditTaskForm() {
                     remark,
                     enableCron,
                     cronExpression,
-                    enableTaskScraper
+                    enableTaskScraper,
+                    sourceRegex,
+                    targetRegex
                 })
             });
             loading.hide()
