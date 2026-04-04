@@ -1,4 +1,5 @@
 const got = require('got');
+const net = require('net');
 const MessageService = require('./MessageService');
 const { logTaskEvent } = require('../../utils/logUtils');
 const ProxyUtil = require('../../utils/ProxyUtil'); // ProxyUtil 仍然可能被 ConfigService.getProxyAgent 内部使用或直接使用
@@ -51,6 +52,42 @@ class CustomPushService extends MessageService {
         return newObj;
     }
 
+    _isPrivateHostname(hostname) {
+        const normalized = String(hostname || '').toLowerCase();
+        if (!normalized) return true;
+        if (normalized === 'localhost' || normalized === '::1') return true;
+        if (normalized.endsWith('.local')) return true;
+        if (net.isIP(normalized) === 4) {
+            if (normalized.startsWith('10.') || normalized.startsWith('127.') || normalized.startsWith('169.254.') || normalized.startsWith('192.168.')) {
+                return true;
+            }
+            const parts = normalized.split('.').map(Number);
+            if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) {
+                return true;
+            }
+        }
+        if (net.isIP(normalized) === 6) {
+            return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:');
+        }
+        return false;
+    }
+
+    _validateOutboundUrl(rawUrl) {
+        let parsed;
+        try {
+            parsed = new URL(rawUrl);
+        } catch (error) {
+            throw new Error('URL格式无效');
+        }
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            throw new Error('仅支持HTTP/HTTPS协议');
+        }
+        if (this._isPrivateHostname(parsed.hostname)) {
+            throw new Error('不允许访问本地或内网地址');
+        }
+        return parsed.toString();
+    }
+
     async _sendSingleRequest(title, content, singlePushConfig) {
         if (!singlePushConfig || !singlePushConfig.enabled) {
             return false;
@@ -64,7 +101,7 @@ class CustomPushService extends MessageService {
             return false;
         }
 
-        let processedUrl = this._replacePlaceholders(url, title, content);
+        let processedUrl = this._validateOutboundUrl(this._replacePlaceholders(url, title, content));
         let requestHeaders = {};
         let requestBodyFields = {};
 

@@ -41,6 +41,26 @@ function createProgressRing(current, total) {
     `;
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function sanitizeUrl(url) {
+    try {
+        const parsed = new URL(String(url || ''), window.location.origin);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return parsed.href;
+        }
+    } catch (error) {
+    }
+    return '#';
+}
+
 var taskList = []
 // 从taskList中获取任务
 function getTaskById(id) {
@@ -61,20 +81,20 @@ async function fetchTasks() {
             const taskName = task.shareFolderName?(task.resourceName + '/' + task.shareFolderName): task.resourceName || '未知'
             const cronIcon = task.enableCron ? '<span class="cron-icon" title="已开启自定义定时任务">⏰</span>' : '';
             tbody.innerHTML += `
-                <tr data-status='${task.status}' data-task-id='${task.id}' data-name='${taskName}'>
+                <tr data-status='${escapeHtml(task.status)}' data-task-id='${task.id}' data-name='${escapeHtml(taskName)}'>
                     <td>
                         <button class="btn-danger" onclick="deleteTask(${task.id})">删除</button>
                         <button class="btn-warning" onclick="executeTask(${task.id})">执行</button>
                         <button onclick="showEditTaskModal(${task.id})">修改</button>
                     </td>
-                    <td data-label="资源名称">${cronIcon}<a href="${task.shareLink}" target="_blank" class='ellipsis' title="${taskName}">${taskName}</a></td>
-                    <td data-label="账号">${task.account.username}</td>
+                    <td data-label="资源名称">${cronIcon}<a href="${sanitizeUrl(task.shareLink)}" target="_blank" rel="noopener noreferrer" class='ellipsis' title="${escapeHtml(taskName)}">${escapeHtml(taskName)}</a></td>
+                    <td data-label="账号">${escapeHtml(task.account.username)}</td>
                     <!--<td data-label="首次保存目录"><a href="https://cloud.189.cn/web/main/file/folder/${task.targetFolderId}" target="_blank">${task.targetFolderId}</a></td>-->
-                     <td data-label="更新目录"><a href="javascript:void(0)" onclick="showFileListModal('${task.id}')" class='ellipsis'>${task.realFolderName || task.realFolderId}</a></td>
+                     <td data-label="更新目录"><a href="javascript:void(0)" onclick="showFileListModal('${task.id}')" class='ellipsis'>${escapeHtml(task.realFolderName || task.realFolderId)}</a></td>
                     <td data-label="更新数/总数">${task.currentEpisodes || 0}/${task.totalEpisodes || '未知'}${progressRing}</td>
                     <td data-label="转存时间">${formatDateTime(task.lastFileUpdateTime)}</td>
-                    <td data-label="备注">${task.remark?task.remark:''}</td>
-                    <td data-label="状态"><span class="status-badge status-${task.status}">${formatStatus(task.status)}</span></td>
+                     <td data-label="备注">${escapeHtml(task.remark || '')}</td>
+                     <td data-label="状态"><span class="status-badge status-${escapeHtml(task.status)}">${escapeHtml(formatStatus(task.status))}</span></td>
                 </tr>
             `;
         });
@@ -353,10 +373,10 @@ async function showFileListModal(taskId) {
             data.data.forEach(file => {
                 tbody.innerHTML += `
                     <tr>
-                        <td><input type="checkbox" class="file-checkbox" data-filename="${file.name}" data-id="${file.id}"></td>
-                        <td>${file.name}</td>
+                        <td><input type="checkbox" class="file-checkbox" data-filename="${escapeHtml(file.name)}" data-id="${escapeHtml(file.id)}"></td>
+                        <td>${escapeHtml(file.name)}</td>
                         <td>${formatFileSize(file.size)}</td>
-                        <td>${file.lastOpTime}</td>
+                        <td>${escapeHtml(file.lastOpTime)}</td>
                     </tr>
                 `;
             });
@@ -511,9 +531,9 @@ function showRenamePreview(newNames, autoUpdate) {
                     </thead>
                     <tbody>
                         ${newNames.map(file => `
-                            <tr data-file-id="${file.fileId}">
-                                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${file.oldName}</td>
-                                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${file.destFileName}</td>
+                            <tr data-file-id="${escapeHtml(file.fileId)}">
+                                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(file.oldName)}</td>
+                                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(file.destFileName)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -604,7 +624,7 @@ async function showAIRenameOptions() {
                 <div class="rename-preview">
                     <h4>选中的文件：</h4>
                     <ul>
-                        ${selectedFiles.map(file => `<li>${file}</li>`).join('')}
+                        ${selectedFiles.map(file => `<li>${escapeHtml(file)}</li>`).join('')}
                     </ul>
                 </div>
             </div>
@@ -698,8 +718,7 @@ function escapeRegExp(regexStr) {
 
 // 转义HTML属性中的特殊字符
 function escapeHtmlAttr(str) {
-    // 不再处理
-    return str;
+    return escapeHtml(str);
 }
 
 // 初始化表单展开/隐藏功能
@@ -915,8 +934,8 @@ async function parseShareLink() {
             shareFoldersList.innerHTML = data.data.map(folder => `
                 <div class="folder-item">
                     <label>
-                        <input type="checkbox" name="chooseShareFolder" value="${folder.id}" checked>
-                        ${folder.name}
+                        <input type="checkbox" name="chooseShareFolder" value="${escapeHtml(folder.id)}" checked>
+                        ${escapeHtml(folder.name)}
                     </label>
                 </div>
             `).join('');

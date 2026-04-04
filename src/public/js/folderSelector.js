@@ -43,6 +43,15 @@ class FolderSelector {
         this.initModal();
     }
 
+    escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     // 获取常用目录
     async getFavorites() {
         try {
@@ -118,7 +127,7 @@ class FolderSelector {
             <div id="${this.modalId}" class="modal">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h3 class="modal-title">${this.title}</h3>
+                        <h3 class="modal-title">${this.escapeHtml(this.title)}</h3>
                         <a href="javascript:;" class="refresh-link" data-action="refresh">
                             <span class="refresh-icon">🔄</span> 刷新
                         </a>
@@ -128,7 +137,7 @@ class FolderSelector {
                     </div>
                     <div class="form-actions">
                     ${this.buttons.map(btn => `
-                        <button class="${btn.class}" data-action="${btn.action}">${btn.text}</button>
+                        <button class="${this.escapeHtml(btn.class)}" data-action="${this.escapeHtml(btn.action)}">${this.escapeHtml(btn.text)}</button>
                     `).join('')}
                     </div>
                 </div>
@@ -256,7 +265,7 @@ class FolderSelector {
             const expandIcon = (this.isShowingFavorites || node.isFile) ? '' : '<span class="expand-icon">▶</span>';
             const isFavorite = favorites.some(f => f.id === node.id);
             const favoriteIcon = this.enableFavorites ? `
-                <span class="favorite-icon ${isFavorite ? 'active' : ''}" data-id="${node.id}" data-name="${node.name}">
+                <span class="favorite-icon ${isFavorite ? 'active' : ''}" data-id="${this.escapeHtml(node.id)}" data-name="${this.escapeHtml(node.name)}">
                     <img src="/icons/star.svg" alt="star" width="16" height="16">
                 </span>
             ` : '';
@@ -269,7 +278,7 @@ class FolderSelector {
             item.innerHTML = `
                 ${favoriteIcon}
                 <span class="folder-icon">${node.isFile?'📃':'📁'}</span>
-                <span class="folder-name">${displayName}</span>
+                <span class="folder-name">${this.escapeHtml(displayName)}</span>
                 ${expandIcon}
             `;
 

@@ -1,6 +1,26 @@
 let searchResults = [];
 let selectedIndex = -1;
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function sanitizeUrl(url) {
+    try {
+        const parsed = new URL(String(url || ''), window.location.origin);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return parsed.href;
+        }
+    } catch (error) {
+    }
+    return '#';
+}
+
 function showCloudsaver() {
     document.getElementById('cloudSaverModal').style.display = 'block';
     document.body.classList.add('modal-open');
@@ -60,7 +80,7 @@ function renderResults() {
             <div style="padding: 8px; color: #999; font-size: 12px;">以下资源来自 <a href="https://github.com/jiangrui1994/cloudsaver" target="_blank" style="color: #666; text-decoration: underline;">CloudSaver</a></div>
             ${searchResults.map((item, index) => `
                 <div class="cloudsaver-result-item" onclick="selectItem(${index})" data-index="${index}">
-                    ${item.title}
+                    ${escapeHtml(item.title)}
                 </div>
             `).join('')}
         `;
@@ -84,9 +104,14 @@ function handleSelectedResource(action) {
 
     const resource = searchResults[selectedIndex];
     if (action === 'open') {
-        window.open(resource.cloudLinks[0].link, '_blank');
+        const safeUrl = sanitizeUrl(resource.cloudLinks[0].link);
+        if (safeUrl === '#') {
+            message.warning('链接无效');
+            return;
+        }
+        window.open(safeUrl, '_blank', 'noopener,noreferrer');
     } else if (action === 'create') {
-        document.getElementById('shareLink').value = resource.cloudLinks[0].link;
+        document.getElementById('shareLink').value = sanitizeUrl(resource.cloudLinks[0].link);
         // 触发 blur 事件
         document.getElementById('shareLink').dispatchEvent(new Event('blur'));
         closeCloudsaver();

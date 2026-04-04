@@ -66,7 +66,8 @@ class ConfigService {
         username: 'admin',
         password: 'admin',
         baseUrl: '',
-        apiKey: ''
+        apiKey: '',
+        sessionSecret: ''
       },
       strm: {
         enable: false,
@@ -74,7 +75,8 @@ class ConfigService {
       emby: {
         enable: false,
         serverUrl: '',
-        apiKey: ''
+        apiKey: '',
+        webhookSecret: ''
       },
       cloudSaver: {
         baseUrl: '',

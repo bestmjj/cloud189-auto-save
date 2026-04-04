@@ -23,14 +23,105 @@ const { StrmService } = require('./services/strm');
 const AIService = require('./services/ai');
 const CustomPushService = require('./services/message/CustomPushService');
 
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const WEBHOOK_WINDOW_MS = 60 * 1000;
+const WEBHOOK_MAX_ATTEMPTS = 30;
+const loginAttempts = new Map();
+const webhookAttempts = new Map();
+
+function getClientIp(req) {
+    return (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim() || 'unknown';
+}
+
+function checkRateLimit(store, key, windowMs, maxAttempts) {
+    const now = Date.now();
+    const entry = store.get(key);
+    if (!entry || entry.expiresAt <= now) {
+        store.set(key, { count: 1, expiresAt: now + windowMs });
+        return false;
+    }
+    entry.count += 1;
+    return entry.count > maxAttempts;
+}
+
+function clearRateLimit(store, key) {
+    store.delete(key);
+}
+
+function sanitizeRelativePath(input, fieldName) {
+    if (input === undefined || input === null || input === '') {
+        return '';
+    }
+    const normalized = String(input).replace(/\\/g, '/').trim();
+    if (path.isAbsolute(normalized) || normalized.includes('..') || normalized.includes('\0')) {
+        throw new Error(`${fieldName}包含非法路径`);
+    }
+    return normalized.replace(/^\/+|\/+$/g, '');
+}
+
+function sanitizeAccountPayload(payload = {}) {
+    return {
+        ...payload,
+        localStrmPrefix: sanitizeRelativePath(payload.localStrmPrefix, '本地目录'),
+        cloudStrmPrefix: typeof payload.cloudStrmPrefix === 'string' ? payload.cloudStrmPrefix.trim() : payload.cloudStrmPrefix,
+        embyPathReplace: typeof payload.embyPathReplace === 'string' ? payload.embyPathReplace.trim() : payload.embyPathReplace
+    };
+}
+
+function maskSensitiveConfig(config = {}) {
+    const clone = JSON.parse(JSON.stringify(config || {}));
+    const sensitivePaths = [
+        ['system', 'password'],
+        ['system', 'apiKey'],
+        ['system', 'sessionSecret'],
+        ['telegram', 'botToken'],
+        ['telegram', 'chatId'],
+        ['telegram', 'bot', 'botToken'],
+        ['telegram', 'bot', 'chatId'],
+        ['bark', 'key'],
+        ['pushplus', 'token'],
+        ['proxy', 'password'],
+        ['emby', 'apiKey'],
+        ['emby', 'webhookSecret'],
+        ['cloudSaver', 'password'],
+        ['tmdb', 'apiKey'],
+        ['openai', 'apiKey'],
+        ['alist', 'apiKey']
+    ];
+    for (const pathParts of sensitivePaths) {
+        let current = clone;
+        for (let i = 0; i < pathParts.length - 1; i++) {
+            current = current?.[pathParts[i]];
+            if (!current) {
+                break;
+            }
+        }
+        if (current && Object.prototype.hasOwnProperty.call(current, pathParts[pathParts.length - 1])) {
+            current[pathParts[pathParts.length - 1]] = '';
+        }
+    }
+    if (Array.isArray(clone.customPush)) {
+        clone.customPush = clone.customPush.map(item => ({
+            ...item,
+            fields: Array.isArray(item.fields)
+                ? item.fields.map(field => ({ ...field, value: field?.type === 'header' ? '' : field?.value }))
+                : []
+        }));
+    }
+    return clone;
+}
+
 const app = express();
 app.use(cors({
-    origin: '*', // 允许所有来源
+    origin: (origin, callback) => callback(null, !origin),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key'],
-    credentials: true
+    credentials: false
 }));
 app.use(express.json());
+
+const sessionSecret = process.env.SESSION_SECRET || ConfigService.getConfigValue('system.sessionSecret') || 'change-this-session-secret';
 
 app.use(session({
     store: new FileStore({
@@ -41,11 +132,14 @@ app.use(session({
         logFn: () => {},      // 禁用内部日志
         reapAsync: true,      // 异步清理过期session
     }),
-    secret: 'LhX2IyUcMAz2',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: { 
-        maxAge: 24 * 60 * 60 * 1000 * 30 // 30天
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000 * 7
     }
 }));
 
@@ -86,14 +180,24 @@ app.get('/login', (req, res) => {
 
 // 登录接口
 app.post('/api/auth/login', (req, res) => {
+    const ipKey = getClientIp(req);
+    if (checkRateLimit(loginAttempts, ipKey, LOGIN_WINDOW_MS, LOGIN_MAX_ATTEMPTS)) {
+        return res.status(429).json({ success: false, error: '登录尝试过于频繁，请稍后再试' });
+    }
     const { username, password } = req.body;
     if (username === ConfigService.getConfigValue('system.username') && 
         password === ConfigService.getConfigValue('system.password')) {
-        req.session.authenticated = true;
-        req.session.username = username;
-        res.json({ success: true });
+        clearRateLimit(loginAttempts, ipKey);
+        req.session.regenerate((err) => {
+            if (err) {
+                return res.status(500).json({ success: false, error: '登录失败' });
+            }
+            req.session.authenticated = true;
+            req.session.username = username;
+            res.json({ success: true });
+        });
     } else {
-        res.json({ success: false, error: '用户名或密码错误' });
+        res.status(401).json({ success: false, error: '用户名或密码错误' });
     }
 });
 app.use(express.static(path.join(__dirname,'public')));
@@ -104,7 +208,7 @@ app.use((req, res, next) => {
         || req.path === '/api/auth/login' 
         || req.path === '/emby/notify'
         || req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico)$/)) {
-        return next();
+            return next();
     }
     authenticateSession(req, res, next);
 });
@@ -167,6 +271,8 @@ AppDataSource.initialize().then(async () => {
                 }
             }
             account.original_username = account.username;
+            account.password = '';
+            account.cookies = '';
             // username脱敏
             account.username = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
         }
@@ -175,7 +281,7 @@ AppDataSource.initialize().then(async () => {
 
     app.post('/api/accounts', async (req, res) => {
         try {
-            const account = accountRepo.create(req.body);
+            const account = accountRepo.create(sanitizeAccountPayload(req.body));
             // 尝试登录, 登录成功写入store, 如果需要验证码, 则返回用户验证码图片
             if (!account.username.startsWith('n_') && account.password) {
                 // 尝试登录
@@ -230,7 +336,7 @@ AppDataSource.initialize().then(async () => {
             const account = await accountRepo.findOneBy({ id: accountId });
             if (!account) throw new Error('账号不存在');
             if (type == 'local') {
-                account.localStrmPrefix = strmPrefix;
+                account.localStrmPrefix = sanitizeRelativePath(strmPrefix, '本地目录');
             }
             if (type == 'cloud') {
                 account.cloudStrmPrefix = strmPrefix;
@@ -586,11 +692,14 @@ AppDataSource.initialize().then(async () => {
 
     // 系统设置
     app.get('/api/settings', async (req, res) => {
-        res.json({success: true, data: ConfigService.getConfig()})
+        res.json({success: true, data: maskSensitiveConfig(ConfigService.getConfig())})
     })
 
     app.post('/api/settings', async (req, res) => {
         const settings = req.body;
+        if (settings.system?.sessionSecret) {
+            settings.system.sessionSecret = String(settings.system.sessionSecret).trim();
+        }
         SchedulerService.handleScheduleTasks(settings,taskService);
         ConfigService.setConfig(settings)
         await botManager.handleBotStatus(
@@ -684,6 +793,17 @@ AppDataSource.initialize().then(async () => {
     // emby 回调
     app.post('/emby/notify', async (req, res) => {
         try {
+            const webhookIp = getClientIp(req);
+            if (checkRateLimit(webhookAttempts, webhookIp, WEBHOOK_WINDOW_MS, WEBHOOK_MAX_ATTEMPTS)) {
+                return res.status(429).send('Too Many Requests');
+            }
+            const configuredSecret = ConfigService.getConfigValue('emby.webhookSecret');
+            if (configuredSecret) {
+                const providedSecret = req.headers['x-emby-token'] || req.headers['x-webhook-secret'] || req.query.secret;
+                if (providedSecret !== configuredSecret) {
+                    return res.status(401).send('Unauthorized');
+                }
+            }
             await embyService.handleWebhookNotification(req.body);
             res.status(200).send('OK');
         }catch (error) {

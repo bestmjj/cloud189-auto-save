@@ -1,5 +1,14 @@
 let accountsList = []
 let chooseAccount = null
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 // 账号相关功能
 async function fetchAccounts(updateSelect = false) {
     const response = await fetch('/api/accounts');
@@ -19,6 +28,10 @@ async function fetchAccounts(updateSelect = false) {
         }
         accountsList = data.data
         data.data.forEach(account => {
+            const alias = account.alias || '';
+            const cloudStrmPrefix = account.cloudStrmPrefix || '';
+            const localStrmPrefix = account.localStrmPrefix || '';
+            const embyPathReplace = account.embyPathReplace || '';
             tbody.innerHTML += `
                 <tr>
                     <td><span class="default-star" onclick="setDefaultAccount(${account.id})" title="设为默认账号">
@@ -27,20 +40,20 @@ async function fetchAccounts(updateSelect = false) {
                          <button class="btn-primary" onclick="editAccount(${account.id})">修改</button>
                         <button class="btn-danger" onclick="deleteAccount(${account.id})">删除</button>
                         </td>
-                    <td data-label='账户名'>${account.username}</td>
-                    <td data-label='别名' onclick="updateAlias(${account.id}, '${account.alias || ''}')">${account.alias}</td>
+                    <td data-label='账户名'>${escapeHtml(account.username)}</td>
+                    <td data-label='别名' onclick="updateAlias(${account.id}, ${JSON.stringify(alias)})">${escapeHtml(alias)}</td>
                     <td data-label='个人容量'>${formatBytes(account.capacity.cloudCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.cloudCapacityInfo.totalSize)}</td>
                     <td data-label='家庭容量'>${formatBytes(account.capacity.familyCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.familyCapacityInfo.totalSize)}</td>
-                    <td class='strm-prefix' data-label='媒体目录' style="cursor: pointer;" onclick="updateCloudStrmPrefix(${account.id}, '${account.cloudStrmPrefix || ''}')">${account.cloudStrmPrefix || ''}</td>
-                    <td class='strm-prefix' data-label='本地目录' style="cursor: pointer;" onclick="updateLocalStrmPrefix(${account.id}, '${account.localStrmPrefix || ''}')">${account.localStrmPrefix || ''}</td>
-                    <td class='emby-path-replace' data-label='Emby路径替换' style="cursor: pointer;" onclick="updateEmbyPathReplace(${account.id}, '${account.embyPathReplace || ''}')">${account.embyPathReplace || ''}</td>
+                    <td class='strm-prefix' data-label='媒体目录' style="cursor: pointer;" onclick="updateCloudStrmPrefix(${account.id}, ${JSON.stringify(cloudStrmPrefix)})">${escapeHtml(cloudStrmPrefix)}</td>
+                    <td class='strm-prefix' data-label='本地目录' style="cursor: pointer;" onclick="updateLocalStrmPrefix(${account.id}, ${JSON.stringify(localStrmPrefix)})">${escapeHtml(localStrmPrefix)}</td>
+                    <td class='emby-path-replace' data-label='Emby路径替换' style="cursor: pointer;" onclick="updateEmbyPathReplace(${account.id}, ${JSON.stringify(embyPathReplace)})">${escapeHtml(embyPathReplace)}</td>
                 </tr>
             `;
             if (updateSelect) {
                 // n_打头的账号不显示在下拉列表中
                 if (!account.username.startsWith('n_')) {
                     select.innerHTML += `
-                    <option value="${account.id}" ${account.isDefault?"selected":''}>${account.username}</option>
+                    <option value="${account.id}" ${account.isDefault?"selected":''}>${escapeHtml(account.username)}</option>
                 `;
                 }
             }

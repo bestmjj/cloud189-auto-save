@@ -3,11 +3,18 @@ const { logTaskEvent } = require('../utils/logUtils');
 const crypto = require('crypto');
 const got = require('got');
 const ProxyUtil = require('../utils/ProxyUtil');
+
+function buildSafeTokenPath(account) {
+    const rawIdentifier = account.id ? String(account.id) : String(account.username || 'unknown');
+    const safeIdentifier = rawIdentifier.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return `data/tokens/${safeIdentifier}.json`;
+}
+
 class Cloud189Service {
     static instances = new Map();
 
     static getInstance(account) {
-        const key = account.username;
+        const key = account.id || account.username;
         if (!this.instances.has(key)) {
             this.instances.set(key, new Cloud189Service(account));
         }
@@ -18,7 +25,7 @@ class Cloud189Service {
         const _options = {
             username: account.username,
             password: account.password,
-            token: new FileTokenStore(`data/${account.username}.json`)
+            token: new FileTokenStore(buildSafeTokenPath(account))
         }
         if (!account.password && account.cookies) {
             _options.ssonCookie = account.cookies

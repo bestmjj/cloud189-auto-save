@@ -16,6 +16,34 @@ class StrmService {
         this.messageUtil = new MessageUtil();
     }
 
+    _resolveWithinBase(...segments) {
+        const resolvedBase = path.resolve(this.baseDir);
+        const resolvedPath = path.resolve(resolvedBase, ...segments.filter(segment => typeof segment === 'string' && segment.length > 0));
+        if (resolvedPath !== resolvedBase && !resolvedPath.startsWith(resolvedBase + path.sep)) {
+            throw new Error('非法路径');
+        }
+        return resolvedPath;
+    }
+
+    _normalizeRelativePath(inputPath = '') {
+        const normalized = String(inputPath || '').replace(/\\/g, '/').trim();
+        if (!normalized) {
+            return '';
+        }
+        if (path.isAbsolute(normalized) || normalized.includes('..') || normalized.includes('\0')) {
+            throw new Error('非法路径');
+        }
+        return normalized.replace(/^\/+|\/+$/g, '');
+    }
+
+    _sanitizeFileNameSegment(name = '') {
+        const sanitized = String(name).replace(/[\\/\0]/g, '_').trim();
+        if (!sanitized || sanitized === '.' || sanitized === '..') {
+            throw new Error('非法文件名');
+        }
+        return sanitized;
+    }
+
     // 确保目录存在并设置权限和组，递归创建的所有目录都设置为 777 权限
     async _ensureDirectoryExists(dirPath) {
         // 确保使用相对路径
@@ -68,10 +96,12 @@ class StrmService {
             // 去掉头尾/
             taskName = taskName.replace(/^\/|\/$/g, '');
             // 构建完整的目标目录路径
-            const targetDir = path.join(this.baseDir,task.account.localStrmPrefix, taskName);
+            const safePrefix = this._normalizeRelativePath(task.account.localStrmPrefix);
+            const safeTaskName = this._normalizeRelativePath(taskName);
+            const targetDir = this._resolveWithinBase(safePrefix, safeTaskName);
             if (compare) {
                 // 查询出所有目录下的.strm文件
-                const strmFiles = await this.listStrmFiles(path.join(task.account.localStrmPrefix, taskName));
+                const strmFiles = await this.listStrmFiles(path.posix.join(safePrefix, safeTaskName));
                 // 将不在strmFiles中的文件删除
                 for (const file of strmFiles) {
                     if (!files.some(f => path.parse(f.name).name === path.parse(file.name).name)) {
@@ -93,7 +123,7 @@ class StrmService {
                     const fileName = file.name;
                     const parsedPath = path.parse(fileName);
                     const fileNameWithoutExt = parsedPath.name;
-                    const strmPath = path.join(targetDir, `${fileNameWithoutExt}.strm`);
+                    const strmPath = this._resolveWithinBase(safePrefix, safeTaskName, `${this._sanitizeFileNameSegment(fileNameWithoutExt)}.strm`);
 
                     // 检查文件是否存在
                     try {
@@ -154,6 +184,7 @@ class StrmService {
                 let startPath = account.cloudStrmPrefix.includes('/d/') 
                 ? account.cloudStrmPrefix.split('/d/')[1] 
                 : path.basename(account.cloudStrmPrefix);
+                const safePrefix = this._normalizeRelativePath(account.localStrmPrefix);
                 // 初始化统计信息
                 const stats = {
                     success: 0,
@@ -166,7 +197,7 @@ class StrmService {
                 const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase());
                  // 如果覆盖 则直接删除currentPath
                 if (overwrite) {
-                    this.deleteDir(path.join(account.localStrmPrefix, startPath), true)
+                    this.deleteDir(path.posix.join(safePrefix, this._normalizeRelativePath(startPath)))
                 }
                 await this._processDirectory(startPath, account, stats, mediaSuffixs, overwrite);
                 const userrname = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
@@ -224,10 +255,12 @@ class StrmService {
                     }
 
                     // 构建STRM文件路径
-                    const relativePath = dirPath.substring(dirPath.indexOf('/') + 1).replace(/^\/+|\/+$/g, '')
-                    const targetDir = path.join(this.baseDir, account.localStrmPrefix, relativePath);
-                    const parsedPath = path.parse(file.name);
-                    const strmPath = path.join(targetDir, `${parsedPath.name}.strm`);
+                     const relativePath = dirPath.substring(dirPath.indexOf('/') + 1).replace(/^\/+|\/+$/g, '')
+                     const safePrefix = this._normalizeRelativePath(account.localStrmPrefix);
+                     const safeRelativePath = this._normalizeRelativePath(relativePath);
+                     const targetDir = this._resolveWithinBase(safePrefix, safeRelativePath);
+                     const parsedPath = path.parse(file.name);
+                     const strmPath = this._resolveWithinBase(safePrefix, safeRelativePath, `${this._sanitizeFileNameSegment(parsedPath.name)}.strm`);
                     // overwrite && await this._deleteDirAllStrm(targetDir)
                     // 检查文件是否存在
                     try {
@@ -264,7 +297,7 @@ class StrmService {
 
     async listStrmFiles(dirPath = '') {
         try {
-            const targetPath = path.join(this.baseDir, dirPath);
+            const targetPath = this._resolveWithinBase(this._normalizeRelativePath(dirPath));
             const results = [];
             
             // 检查目录是否存在
@@ -301,11 +334,11 @@ class StrmService {
      */
     async delete(fileName) {
         const parsedPath = path.parse(fileName);
-        const dirPath = parsedPath.dir;
-        const fileNameWithoutExt = parsedPath.name;
-        const strmPath = path.join(this.baseDir, dirPath, `${fileNameWithoutExt}.strm`);
-        const nfoPath = path.join(this.baseDir, dirPath, `${fileNameWithoutExt}.nfo`);
-        const thumbPath = path.join(this.baseDir, dirPath, `${fileNameWithoutExt}-thumb.jpg`);
+        const dirPath = this._normalizeRelativePath(parsedPath.dir);
+        const fileNameWithoutExt = this._sanitizeFileNameSegment(parsedPath.name);
+        const strmPath = this._resolveWithinBase(dirPath, `${fileNameWithoutExt}.strm`);
+        const nfoPath = this._resolveWithinBase(dirPath, `${fileNameWithoutExt}.nfo`);
+        const thumbPath = this._resolveWithinBase(dirPath, `${fileNameWithoutExt}-thumb.jpg`);
         try {
            // 删除 .strm 文件
            try {
@@ -341,7 +374,7 @@ class StrmService {
             }
             
             // 尝试删除空目录
-            const targetDir = path.join(this.baseDir, dirPath);
+            const targetDir = this._resolveWithinBase(dirPath);
             const files = await fs.readdir(targetDir);
             if (files.length === 0) {
                 await fs.rmdir(targetDir);
@@ -356,7 +389,7 @@ class StrmService {
     // 删除目录
     async deleteDir(dirPath) {
         try {
-            const targetDir = path.join(this.baseDir, dirPath);
+            const targetDir = this._resolveWithinBase(this._normalizeRelativePath(dirPath));
              // 检查目录是否存在
              try {
                 await fs.access(targetDir);
@@ -365,7 +398,7 @@ class StrmService {
                 // logTaskEvent(`STRM目录不存在，跳过删除: ${targetDir}`);
                 return;
             }
-            await fs.rm(targetDir, { recursive: true });
+            await fs.rm(targetDir, { recursive: true, force: true });
             logTaskEvent(`删除STRM目录成功: ${targetDir}`);
 
             // 检查并删除空的父目录
@@ -386,16 +419,17 @@ class StrmService {
     // 删除目录下的所有.strm文件
     async  _deleteDirAllStrm(dirPath) {
         // 检查目录是否存在
+        const safeDirPath = this._resolveWithinBase(path.relative(this.baseDir, dirPath));
         try {
-            await fs.access(dirPath);
+            await fs.access(safeDirPath);
         } catch (err) {
             // 目录不存在，直接返回
-            logTaskEvent(`STRM目录不存在，跳过删除: ${dirPath}`);
+            logTaskEvent(`STRM目录不存在，跳过删除: ${safeDirPath}`);
             return;
         }
-        const files = await fs.readdir(dirPath);
+        const files = await fs.readdir(safeDirPath);
         await Promise.all(files.map(async file => {
-            const filePath = path.join(dirPath, file);
+            const filePath = this._resolveWithinBase(path.relative(this.baseDir, safeDirPath), file);
             if (path.extname(filePath) === '.strm') {
                 try {
                     await fs.unlink(filePath);
@@ -430,7 +464,7 @@ class StrmService {
                 return path.join(task.account.cloudStrmPrefix, taskName);
             }
         }else{
-            return path.join(this.baseDir, task.account.localStrmPrefix, taskName);
+            return this._resolveWithinBase(this._normalizeRelativePath(task.account.localStrmPrefix), this._normalizeRelativePath(taskName));
         }
         return '';
     }
