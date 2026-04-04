@@ -236,12 +236,13 @@ class Cloud189Service {
     }
 
     // 重命名文件
-    async renameFile(fileId, destFileName) { 
+    async renameFile(fileId, destFileName) {
         const response = await this.request('/api/open/file/renameFile.action', {
             method: 'POST',
             form: {
                 fileId,
-                destFileName
+                destFileName,
+                fileName: destFileName
             },
         })
         return response
